@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Care Coordinator Assistant</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Care Coordinator Assistant</h1>
+            <p>Help nurses book appointments and coordinate patient care</p>
+        </header>
+
+        <main>
+            <!-- Patient ID Input Section -->
+            <section class="patient-section">
+                <h2>Load Patient</h2>
+                <div class="input-group">
+                    <label for="patient-id">Patient ID:</label>
+                    <input type="text" id="patient-id" placeholder="Enter patient ID (e.g., 1)">
+                    <button id="load-patient-btn">Load Patient</button>
+                </div>
+                <div id="patient-info" class="patient-info hidden">
+                    <!-- Patient data will be displayed here -->
+                </div>
+            </section>
+
+            <!-- Chat Interface Section -->
+            <section class="chat-section">
+                <h2>Care Coordinator Chat</h2>
+                <div id="chat-container" class="chat-container">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="message assistant-message">
+                            <strong>Assistant:</strong> Hello! Please load a patient above to begin care coordination.
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chat-input" placeholder="Ask about appointments, providers, insurance..." disabled>
+                        <button id="send-btn" disabled>Send</button>
+                    </div>
+                    <div class="quick-actions-menu">
+                        <div class="quick-actions-buttons">
+                            <button class="quick-action-btn" data-action="providers" disabled>View Providers</button>
+                            <button class="quick-action-btn" data-action="insurance" disabled>Check Insurance</button>
+                            <button class="quick-action-btn" data-action="history" disabled>Patient History</button>
+                            <button class="quick-action-btn" data-action="book" disabled>Book Appointment</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Appointment Booking Form -->
+            <section class="booking-section">
+                <h2>Book Appointment</h2>
+                <form id="appointment-form" class="appointment-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="first-name">First Name:</label>
+                            <input type="text" id="first-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="last-name">Last Name:</label>
+                            <input type="text" id="last-name" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="dob">Date of Birth:</label>
+                            <input type="date" id="dob" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="appointment-length">Appointment Length:</label>
+                            <select id="appointment-length" required>
+                                <option value="">Select duration</option>
+                                <option value="15">15 minutes</option>
+                                <option value="30">30 minutes</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="doctor">Doctor:</label>
+                            <select id="doctor" required>
+                                <option value="">Select doctor</option>
+                                <option value="Grey, Meredith">Dr. Meredith Grey (Primary Care)</option>
+                                <option value="House, Gregory">Dr. Gregory House (Orthopedics)</option>
+                                <option value="Yang, Cristina">Dr. Cristina Yang (Surgery)</option>
+                                <option value="Perry, Chris">Chris Perry, FNP (Primary Care)</option>
+                                <option value="Brennan, Temperance">Dr. Temperance Brennan (Orthopedics)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="appointment-type">Appointment Type:</label>
+                            <select id="appointment-type" required>
+                                <option value="">Select type</option>
+                                <option value="NEW">NEW (30 min) - First visit with provider in 5+ years</option>
+                                <option value="ESTABLISHED">ESTABLISHED (15 min) - Seen provider within 5 years</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="appointment-location">Location:</label>
+                            <select id="appointment-location" required>
+                                <option value="">Select location</option>
+                                <option value="Sloan Primary Care">Sloan Primary Care - 202 Maple St, Winston-Salem, NC</option>
+                                <option value="PPTH Orthopedics">PPTH Orthopedics - 101 Pine St, Greensboro, NC</option>
+                                <option value="Jefferson Hospital">Jefferson Hospital - 202 Maple St, Claremont, NC</option>
+                                <option value="Seattle Grace Cardiac Surgery">Seattle Grace Cardiac Surgery - 456 Elm St, Charlotte, NC</option>
+                                <option value="Sacred Heart Surgical Department">Sacred Heart Surgical Department - 123 Main St, Raleigh, NC</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="appointment-date">Appointment Date:</label>
+                            <input type="date" id="appointment-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="appointment-time">Appointment Time:</label>
+                            <input type="time" id="appointment-time" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" id="book-appointment-btn" disabled>Book Appointment</button>
+                        <button type="button" id="clear-form-btn">Clear Form</button>
+                    </div>
+                </form>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
