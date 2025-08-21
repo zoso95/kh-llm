@@ -232,6 +232,24 @@ main {
     border-color: #e2e8f0;
 }
 
+/* Typing Indicator */
+.typing-indicator {
+    opacity: 0.8;
+}
+
+.typing-dots {
+    animation: typing 1.5s infinite;
+}
+
+@keyframes typing {
+    0%, 60%, 100% {
+        opacity: 0.3;
+    }
+    30% {
+        opacity: 1;
+    }
+}
+
 
 .loading {
     opacity: 0.6;

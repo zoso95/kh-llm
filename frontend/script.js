@@ -4,6 +4,9 @@ class CareCoordinatorApp {
     constructor() {
         this.currentPatient = null;
         this.conversationHistory = [];
+        this.conversationId = null;
+        this.chatServiceUrl = 'http://localhost:5001'; // ChatGPT service URL
+        this.patientApiUrl = 'http://localhost:5000'; // Patient API URL
         this.initializeEventListeners();
         this.logActivity('Application initialized');
     }
@@ -68,8 +71,8 @@ class CareCoordinatorApp {
         this.logActivity(`Loading patient with ID: ${patientId}`);
         
         try {
-            // TODO: Replace with actual API call to flask-app.py
-            const response = await this.mockPatientAPI(patientId);
+            // Load patient from real API
+            const response = await this.loadPatientFromAPI(patientId);
             
             if (response.error) {
                 this.showError(response.error);
@@ -78,6 +81,8 @@ class CareCoordinatorApp {
 
             this.currentPatient = response;
             this.displayPatientInfo(response);
+            this.clearChatMessages();
+            await this.initializeConversation(patientId);
             this.enableChatInterface();
             this.logActivity(`Patient loaded successfully: ${response.name}`);
 
@@ -87,35 +92,28 @@ class CareCoordinatorApp {
         }
     }
 
-    async mockPatientAPI(patientId) {
-        // Mock API response - TODO: Replace with actual fetch to flask-app.py
-        this.logActivity(`Mock API call for patient ${patientId}`);
+    async loadPatientFromAPI(patientId) {
+        // Call real patient API
+        this.logActivity(`Loading patient ${patientId} from API`);
         
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                if (patientId === '1') {
-                    resolve({
-                        id: 1,
-                        name: "John Doe",
-                        dob: "01/01/1975",
-                        pcp: "Dr. Meredith Grey",
-                        ehrId: "1234abcd",
-                        referred_providers: [
-                            {"provider": "House, Gregory MD", "specialty": "Orthopedics"},
-                            {"specialty": "Primary Care"}
-                        ],
-                        appointments: [
-                            {"date": "3/05/18", "time": "9:15am", "provider": "Dr. Meredith Grey", "status": "completed"},
-                            {"date": "8/12/24", "time": "2:30pm", "provider": "Dr. Gregory House", "status": "completed"},
-                            {"date": "9/17/24", "time": "10:00am", "provider": "Dr. Meredith Grey", "status": "noshow"},
-                            {"date": "11/25/24", "time": "11:30am", "provider": "Dr. Meredith Grey", "status": "cancelled"}
-                        ]
-                    });
-                } else {
-                    resolve({error: "Patient not found"});
+        try {
+            const response = await fetch(`${this.patientApiUrl}/patient/${patientId}`);
+            
+            if (!response.ok) {
+                if (response.status === 404) {
+                    return { error: "Patient not found" };
                 }
-            }, 500);
-        });
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const patientData = await response.json();
+            this.logActivity(`Successfully loaded patient: ${patientData.name}`);
+            return patientData;
+            
+        } catch (error) {
+            this.logActivity(`Error loading patient: ${error.message}`);
+            return { error: `Failed to load patient: ${error.message}` };
+        }
     }
 
     displayPatientInfo(patient) {
@@ -133,6 +131,46 @@ class CareCoordinatorApp {
         this.logActivity(`Patient info displayed for ${patient.name}`);
     }
 
+    clearChatMessages() {
+        const messagesDiv = document.getElementById('chat-messages');
+        messagesDiv.innerHTML = '';
+        this.conversationHistory = [];
+        this.conversationId = null;
+        this.logActivity('Chat messages cleared');
+    }
+
+    async initializeConversation(patientId) {
+        try {
+            this.logActivity(`Initializing conversation for patient ${patientId}`);
+            
+            const response = await fetch(`${this.chatServiceUrl}/conversation/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ patient_id: patientId })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            this.conversationId = data.conversation_id;
+            this.conversationHistory = []; // Reset for new patient
+            
+            // Add AI welcome message
+            this.addMessage('assistant', data.message);
+            
+            this.logActivity(`Conversation initialized: ${this.conversationId}`);
+            
+        } catch (error) {
+            this.logActivity(`Error initializing conversation: ${error.message}`);
+            // Fall back to default welcome message
+            this.addMessage('assistant', `Patient ${this.currentPatient.name} loaded. How can I help you coordinate their care? (Note: AI service may be unavailable)`);
+        }
+    }
+
     enableChatInterface() {
         document.getElementById('chat-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
@@ -147,9 +185,6 @@ class CareCoordinatorApp {
         if (this.currentPatient) {
             this.prefillPatientInfo();
         }
-
-        // Add welcome message
-        this.addMessage('assistant', `Patient ${this.currentPatient.name} loaded. How can I help you coordinate their care?`);
         
         this.logActivity('Chat interface enabled');
     }
@@ -160,36 +195,88 @@ class CareCoordinatorApp {
         
         if (!message) return;
 
+        if (!this.currentPatient) {
+            this.showError('Please load a patient first');
+            return;
+        }
+
         this.addMessage('user', message);
         input.value = '';
+        
+        // Show typing indicator
+        const typingId = this.showTypingIndicator();
         
         this.logActivity(`User message sent: ${message}`);
 
         try {
-            // TODO: Replace with actual API call to chatgpt_service.py
-            const response = await this.mockChatAPI(message);
-            this.addMessage('assistant', response.response);
+            const response = await this.sendChatMessage(message);
+            this.removeTypingIndicator(typingId);
             
-            this.logActivity(`Assistant response received: ${response.response}`);
+            if (response.error) {
+                this.addMessage('assistant', `Sorry, I encountered an error: ${response.error}`);
+            } else {
+                this.addMessage('assistant', response.response);
+                this.logActivity(`Assistant response received (${response.tokens_used || 'unknown'} tokens)`);
+            }
             
         } catch (error) {
+            this.removeTypingIndicator(typingId);
             this.logActivity(`Error in chat: ${error.message}`);
-            this.addMessage('assistant', 'Sorry, I encountered an error. Please try again.');
+            this.addMessage('assistant', 'Sorry, I encountered a connection error. Please try again.');
         }
     }
 
-    async mockChatAPI(message) {
-        // Mock ChatGPT API response - TODO: Replace with actual fetch to chatgpt_service.py
-        this.logActivity(`Mock ChatGPT API call with message: ${message}`);
+    async sendChatMessage(message) {
+        this.logActivity(`Sending message to ChatGPT service: ${message}`);
         
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve({
-                    response: `I received your message: "${message}". This is a mock response. To book an appointment for ${this.currentPatient?.name || 'the patient'}, I need to know the provider, appointment type, and location. How can I help you with that?`,
-                    timestamp: new Date().toISOString()
-                });
-            }, 1000);
-        });
+        try {
+            const response = await fetch(`${this.chatServiceUrl}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    patient_id: this.currentPatient.id.toString(),
+                    message: message,
+                    conversation_history: this.conversationHistory
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            this.logActivity(`ChatGPT service response received`);
+            return data;
+            
+        } catch (error) {
+            this.logActivity(`Error calling ChatGPT service: ${error.message}`);
+            return { error: error.message };
+        }
+    }
+
+    showTypingIndicator() {
+        const messagesDiv = document.getElementById('chat-messages');
+        const typingDiv = document.createElement('div');
+        const typingId = `typing-${Date.now()}`;
+        
+        typingDiv.id = typingId;
+        typingDiv.className = 'message assistant-message typing-indicator';
+        typingDiv.innerHTML = '<strong>Assistant:</strong> <span class="typing-dots">●●●</span>';
+        
+        messagesDiv.appendChild(typingDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        
+        return typingId;
+    }
+
+    removeTypingIndicator(typingId) {
+        const typingDiv = document.getElementById(typingId);
+        if (typingDiv) {
+            typingDiv.remove();
+        }
     }
 
     addMessage(sender, content) {
@@ -200,12 +287,13 @@ class CareCoordinatorApp {
         messagesDiv.appendChild(messageDiv);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
         
-        // Update conversation history
-        this.conversationHistory.push({
-            role: sender === 'user' ? 'user' : 'assistant',
-            content: content,
-            timestamp: new Date().toISOString()
-        });
+        // Update conversation history (only for actual chat messages, not system messages)
+        if (this.currentPatient && this.conversationId) {
+            this.conversationHistory.push({
+                role: sender === 'user' ? 'user' : 'assistant',
+                content: content
+            });
+        }
     }
 
     handleQuickAction(action) {
@@ -262,7 +350,7 @@ class CareCoordinatorApp {
             
             if (response.success) {
                 this.showSuccessMessage(`Appointment booked successfully! Appointment ID: ${response.appointmentId}`);
-                this.addMessage('assistant', `Great! I've successfully booked a ${formData.appointmentType} appointment for ${formData.firstName} ${formData.lastName} with ${formData.doctor} at ${formData.location} on ${formData.date} at ${formData.time} for ${formData.duration} minutes.`);
+                this.addMessage('assistant', `Great! I've successfully booked a ${formData.appointmentType} appointment for ${formData.firstName} ${formData.lastName} with ${formData.doctor} at ${formData.location} on ${formData.date} at ${formData.time} for ${formData.appointmentType} minutes.`);
                 this.clearAppointmentForm();
             } else {
                 this.showError(response.error || 'Failed to book appointment');
@@ -279,7 +367,6 @@ class CareCoordinatorApp {
             firstName: document.getElementById('first-name').value.trim(),
             lastName: document.getElementById('last-name').value.trim(),
             dob: document.getElementById('dob').value,
-            duration: document.getElementById('appointment-length').value,
             doctor: document.getElementById('doctor').value,
             appointmentType: document.getElementById('appointment-type').value,
             location: document.getElementById('appointment-location').value,
@@ -289,7 +376,7 @@ class CareCoordinatorApp {
     }
 
     validateAppointmentForm(data) {
-        const required = ['firstName', 'lastName', 'dob', 'duration', 'doctor', 'appointmentType', 'location', 'date', 'time'];
+        const required = ['firstName', 'lastName', 'dob', 'doctor', 'appointmentType', 'location', 'date', 'time'];
         const missing = required.filter(field => !data[field]);
         
         if (missing.length > 0) {
