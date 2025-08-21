@@ -350,7 +350,11 @@ class CareCoordinatorApp {
             
             if (response.success) {
                 this.showSuccessMessage(`Appointment booked successfully! Appointment ID: ${response.appointmentId}`);
-                this.addMessage('assistant', `Great! I've successfully booked a ${formData.appointmentType} appointment for ${formData.firstName} ${formData.lastName} with ${formData.doctor} at ${formData.location} on ${formData.date} at ${formData.time} for ${formData.appointmentType} minutes.`);
+                var duration = "15";
+                if(formData.appointmentType === 'NEW'){
+                    duration = "30";
+                }
+                this.addMessage('assistant', `Great! I've successfully booked a ${formData.appointmentType} appointment for ${formData.firstName} ${formData.lastName} with ${formData.doctor} at ${formData.location} on ${formData.date} at ${formData.time} for ${duration} minutes.`);
                 this.clearAppointmentForm();
             } else {
                 this.showError(response.error || 'Failed to book appointment');
@@ -468,10 +472,8 @@ class CareCoordinatorApp {
 
         if (hasSeenDoctor) {
             appointmentTypeSelect.value = 'ESTABLISHED';
-            document.getElementById('appointment-length').value = '15';
         } else {
             appointmentTypeSelect.value = 'NEW';
-            document.getElementById('appointment-length').value = '30';
         }
 
         this.logActivity(`Auto-set appointment type: ${appointmentTypeSelect.value} based on patient history`);
