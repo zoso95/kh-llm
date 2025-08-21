@@ -1,7 +1,9 @@
 # app.py
 from flask import Flask, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 @app.route('/', methods=['GET'])
 def healthcheck():
@@ -29,6 +31,8 @@ def get_data(patient_id):
             ]
         }
         return jsonify(data)
+    else:
+        return jsonify({"error": "Patient not found"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
