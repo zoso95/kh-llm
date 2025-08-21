@@ -7,6 +7,49 @@ class CareCoordinatorApp {
         this.conversationId = null;
         this.chatServiceUrl = 'http://localhost:5001'; // ChatGPT service URL
         this.patientApiUrl = 'http://localhost:5000'; // Patient API URL
+        
+        // Doctor availability data from data sheet
+        this.doctorAvailability = {
+            'Grey, Meredith': {
+                days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], // M-F
+                hours: { start: '09:00', end: '17:00' },
+                location: 'Sloan Primary Care'
+            },
+            'House, Gregory': {
+                schedule: [
+                    {
+                        days: ['monday', 'tuesday', 'wednesday'], // M-W at PPTH
+                        hours: { start: '09:00', end: '17:00' },
+                        location: 'PPTH Orthopedics'
+                    },
+                    {
+                        days: ['thursday', 'friday'], // Th-F at Jefferson
+                        hours: { start: '09:00', end: '17:00' },
+                        location: 'Jefferson Hospital'
+                    }
+                ],
+                // Combined days for easy access
+                get days() {
+                    return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+                }
+            },
+            'Yang, Cristina': {
+                days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], // M-F
+                hours: { start: '09:00', end: '17:00' },
+                location: 'Seattle Grace Cardiac Surgery'
+            },
+            'Perry, Chris': {
+                days: ['monday', 'tuesday', 'wednesday'], // M-W
+                hours: { start: '09:00', end: '17:00' },
+                location: 'Sacred Heart Surgical Department'
+            },
+            'Brennan, Temperance': {
+                days: ['tuesday', 'wednesday', 'thursday'], // Tu-Th
+                hours: { start: '10:00', end: '16:00' },
+                location: 'Jefferson Hospital'
+            }
+        };
+        
         this.initializeEventListeners();
         this.logActivity('Application initialized');
     }
@@ -55,6 +98,11 @@ class CareCoordinatorApp {
         // Doctor selection change handler for smart defaults
         document.getElementById('doctor').addEventListener('change', () => {
             this.handleDoctorSelection();
+        });
+
+        // Date selection change handler for time slots
+        document.getElementById('appointment-date').addEventListener('change', () => {
+            this.handleDateSelection();
         });
 
         this.logActivity('Event listeners initialized');
@@ -428,6 +476,12 @@ class CareCoordinatorApp {
 
     clearAppointmentForm() {
         document.getElementById('appointment-form').reset();
+        
+        // Reset disabled states
+        document.getElementById('appointment-date').disabled = true;
+        document.getElementById('appointment-time').disabled = true;
+        document.getElementById('appointment-time').innerHTML = '<option value="">Select time</option>';
+        
         this.logActivity('Appointment form cleared');
     }
 
@@ -440,8 +494,15 @@ class CareCoordinatorApp {
     handleDoctorSelection() {
         const doctorSelect = document.getElementById('doctor');
         const selectedDoctor = doctorSelect.value;
+        const dateInput = document.getElementById('appointment-date');
+        const timeSelect = document.getElementById('appointment-time');
         
         if (!selectedDoctor) {
+            // Reset if no doctor selected
+            dateInput.disabled = true;
+            timeSelect.disabled = true;
+            dateInput.value = '';
+            timeSelect.innerHTML = '<option value="">Select time</option>';
             return;
         }
 
@@ -452,6 +513,16 @@ class CareCoordinatorApp {
         
         // Auto-set location based on doctor
         this.autoSetLocation(selectedDoctor);
+        
+        // Enable and set up date restrictions
+        this.setupDateRestrictions(selectedDoctor);
+        
+        // Enable date picker
+        dateInput.disabled = false;
+        
+        // Reset time dropdown
+        timeSelect.innerHTML = '<option value="">Select a date first</option>';
+        timeSelect.disabled = true;
     }
 
     autoSetAppointmentType(doctorName) {
@@ -482,10 +553,16 @@ class CareCoordinatorApp {
     autoSetLocation(doctorName) {
         const locationSelect = document.getElementById('appointment-location');
         
-        // Map doctors to their primary locations based on data sheet
+        // Handle Gregory House's split schedule - don't auto-set location
+        if (doctorName === 'House, Gregory') {
+            locationSelect.value = ''; // Clear selection
+            this.logActivity(`Location not auto-set for ${doctorName} due to split schedule`);
+            return;
+        }
+        
+        // Map other doctors to their primary locations
         const doctorLocationMap = {
             'Grey, Meredith': 'Sloan Primary Care',
-            'House, Gregory': 'PPTH Orthopedics',
             'Yang, Cristina': 'Seattle Grace Cardiac Surgery',
             'Perry, Chris': 'Sacred Heart Surgical Department',
             'Brennan, Temperance': 'Jefferson Hospital'
@@ -496,6 +573,185 @@ class CareCoordinatorApp {
             locationSelect.value = location;
             this.logActivity(`Auto-set location: ${location} for doctor ${doctorName}`);
         }
+    }
+
+    setupDateRestrictions(doctorName) {
+        const dateInput = document.getElementById('appointment-date');
+        const availability = this.doctorAvailability[doctorName];
+        
+        if (!availability) {
+            this.logActivity(`No availability data for doctor: ${doctorName}`);
+            return;
+        }
+
+        // Set minimum date to tomorrow
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        dateInput.min = tomorrow.toISOString().split('T')[0];
+
+        // Set maximum date to 3 months from now
+        const maxDate = new Date();
+        maxDate.setMonth(maxDate.getMonth() + 3);
+        dateInput.max = maxDate.toISOString().split('T')[0];
+
+        // Add custom validation for available days
+        this.addDateValidation(dateInput, availability.days);
+
+        // Update help text to show available days and suggest next available date
+        const helpText = dateInput.parentNode.querySelector('.help-text');
+        if (helpText) {
+            const nextAvailable = this.getNextAvailableDate(availability.days);
+            helpText.innerHTML = `Available: ${availability.days.map(day => 
+                day.charAt(0).toUpperCase() + day.slice(1)
+            ).join(', ')}<br><small>Next available: ${nextAvailable}</small>`;
+        }
+
+        this.logActivity(`Date restrictions set for ${doctorName}: available ${availability.days.join(', ')}`);
+    }
+
+    addDateValidation(dateInput, availableDays) {
+        // Remove existing validation
+        dateInput.removeEventListener('input', this.validateDate);
+        
+        // Add new validation
+        this.validateDate = (event) => {
+            const selectedDate = new Date(event.target.value);
+            const dayName = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            
+            if (!availableDays.includes(dayName)) {
+                event.target.setCustomValidity(`Doctor not available on ${dayName}s`);
+                event.target.style.borderColor = '#e53e3e';
+                event.target.style.backgroundColor = '#fed7d7';
+            } else {
+                event.target.setCustomValidity('');
+                event.target.style.borderColor = '#38b2ac';
+                event.target.style.backgroundColor = '#e6fffa';
+            }
+        };
+        
+        dateInput.addEventListener('input', this.validateDate);
+    }
+
+    handleDateSelection() {
+        const doctorSelect = document.getElementById('doctor');
+        const dateInput = document.getElementById('appointment-date');
+        const timeSelect = document.getElementById('appointment-time');
+        const locationSelect = document.getElementById('appointment-location');
+        
+        const selectedDoctor = doctorSelect.value;
+        const selectedDate = dateInput.value;
+        
+        if (!selectedDoctor || !selectedDate) {
+            return;
+        }
+
+        // Check if selected date is valid for this doctor
+        const selectedDateObj = new Date(selectedDate);
+        const dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        
+        const availability = this.doctorAvailability[selectedDoctor];
+        
+        if (!availability.days.includes(dayName)) {
+            this.showError(`${selectedDoctor} is not available on ${dayName}s. Available days: ${availability.days.join(', ')}`);
+            dateInput.value = '';
+            timeSelect.disabled = true;
+            return;
+        }
+
+        this.logActivity(`Valid date selected for ${selectedDoctor}: ${selectedDate} (${dayName})`);
+        
+        // Handle Gregory House's split schedule location setting
+        if (selectedDoctor === 'House, Gregory') {
+            const houseAvailability = this.doctorAvailability[selectedDoctor];
+            const scheduleForDay = houseAvailability.schedule.find(s => s.days.includes(dayName));
+            
+            if (scheduleForDay) {
+                locationSelect.value = scheduleForDay.location;
+                this.logActivity(`Auto-set location for House on ${dayName}: ${scheduleForDay.location}`);
+            }
+        }
+        
+        // Generate time slots
+        this.generateTimeSlots(selectedDoctor, dayName);
+    }
+
+    generateTimeSlots(doctorName, dayName) {
+        const timeSelect = document.getElementById('appointment-time');
+        const availability = this.doctorAvailability[doctorName];
+        
+        if (!availability) return;
+
+        // Clear existing options
+        timeSelect.innerHTML = '<option value="">Select time</option>';
+
+        let hours;
+        
+        // Handle Gregory House's split schedule
+        if (doctorName === 'House, Gregory' && dayName) {
+            const scheduleForDay = availability.schedule.find(s => s.days.includes(dayName));
+            hours = scheduleForDay ? scheduleForDay.hours : availability.schedule[0].hours;
+        } else {
+            hours = availability.hours || availability.schedule[0].hours;
+        }
+
+        // Generate time slots (30-minute intervals)
+        const startTime = this.parseTime(hours.start);
+        const endTime = this.parseTime(hours.end);
+        
+        const slots = [];
+        let currentTime = startTime;
+        
+        while (currentTime < endTime) {
+            const timeString = this.formatTime(currentTime);
+            slots.push(timeString);
+            currentTime += 30; // 30-minute intervals
+        }
+
+        // Add time slots to dropdown
+        slots.forEach(slot => {
+            const option = document.createElement('option');
+            option.value = slot;
+            option.textContent = slot;
+            timeSelect.appendChild(option);
+        });
+
+        timeSelect.disabled = false;
+        this.logActivity(`Generated ${slots.length} time slots for ${doctorName} (${hours.start}-${hours.end})`);
+    }
+
+    parseTime(timeString) {
+        // Convert "09:00" to minutes since midnight
+        const [hours, minutes] = timeString.split(':').map(Number);
+        return hours * 60 + minutes;
+    }
+
+    formatTime(minutes) {
+        // Convert minutes since midnight to "09:00" format
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    }
+
+    getNextAvailableDate(availableDays) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        // Find the next available day
+        for (let i = 0; i < 14; i++) { // Check next 2 weeks
+            const checkDate = new Date(tomorrow);
+            checkDate.setDate(tomorrow.getDate() + i);
+            const dayName = checkDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+            
+            if (availableDays.includes(dayName)) {
+                return checkDate.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    month: 'short', 
+                    day: 'numeric' 
+                });
+            }
+        }
+        
+        return 'Check calendar';
     }
 
     logActivity(message) {

@@ -69,7 +69,7 @@ main {
     padding: 20px;
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    max-height: 500px; /* Limit booking section height */
+    max-height: 600px; /* Limit booking section height */
     overflow-y: auto; /* Add scrolling if content exceeds max height */
 }
 
@@ -296,6 +296,28 @@ main {
     border-color: #3182ce;
     box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.1);
 }
+
+.form-group input:disabled,
+.form-group select:disabled {
+    background-color: #f7fafc;
+    color: #a0aec0;
+    cursor: not-allowed;
+}
+
+.help-text {
+    font-size: 12px;
+    color: #718096;
+    margin-top: 4px;
+    display: block;
+}
+
+/* Calendar highlighting for available days */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+}
+
+/* Note: Browser-specific calendar highlighting is limited */
+/* We'll implement custom highlighting via JavaScript */
 
 .form-actions {
     display: flex;
