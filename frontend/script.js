@@ -260,8 +260,6 @@ class CareCoordinatorApp {
             const response = await this.sendChatMessage(message);
             this.removeTypingIndicator(typingId);
             
-            this.logActivity(`Raw response object: ${JSON.stringify(response)}`);
-            
             if (response.error) {
                 this.addMessage('assistant', `Sorry, I encountered an error: ${response.error}`);
             } else {
@@ -270,10 +268,7 @@ class CareCoordinatorApp {
                 
                 // Handle form updates from AI
                 if (response.form_updates) {
-                    this.logActivity(`Form updates detected: ${JSON.stringify(response.form_updates)}`);
                     this.updateAppointmentForm(response.form_updates);
-                } else {
-                    this.logActivity("No form updates found in response");
                 }
             }
             
@@ -307,10 +302,11 @@ class CareCoordinatorApp {
 
             const data = await response.json();
             this.logActivity(`ChatGPT service response received`);
-            this.logActivity(`Response has form_updates: ${!!data.form_updates}`);
+            
             if (data.form_updates) {
-                this.logActivity(`Form updates in response: ${JSON.stringify(data.form_updates)}`);
+                this.logActivity(`Form updates detected: ${Object.keys(data.form_updates).join(', ')}`);
             }
+            
             return data;
             
         } catch (error) {
@@ -769,105 +765,90 @@ class CareCoordinatorApp {
     }
 
     updateAppointmentForm(formUpdates) {
-        this.logActivity(`Updating appointment form: ${JSON.stringify(formUpdates)}`);
+        this.logActivity(`Updating appointment form with ${Object.keys(formUpdates).length} fields`);
         
-        let updatedFields = [];
-        let needsDoctorHandler = false;
-        let needsDateHandler = false;
+        const updatedFields = this.setFormFieldValues(formUpdates);
+        this.handleFormDependencies(formUpdates, updatedFields);
+        this.showFormUpdateResults(updatedFields);
+    }
+
+    setFormFieldValues(formUpdates) {
+        const updatedFields = [];
         
-        // First pass: Update all field values without triggering handlers
         Object.entries(formUpdates).forEach(([field, value]) => {
-            this.logActivity(`Trying to update field "${field}" with value "${value}"`);
             const element = document.getElementById(field);
             
-            if (element) {
-                this.logActivity(`Found element for field "${field}", current value: "${element.value}"`);
-                
-                // Handle special cases for different field types
-                if (element.tagName === 'SELECT' && (field === 'appointment-location' || field === 'doctor')) {
-                    const matchedOption = this.findMatchingOption(element, value);
-                    if (matchedOption) {
-                        element.value = matchedOption.value;
-                        this.logActivity(`Fuzzy matched "${value}" to "${matchedOption.value}"`);
-                    } else {
-                        element.value = value; // Try exact match as fallback
-                        this.logActivity(`No fuzzy match found, using exact value: "${value}"`);
-                    }
-                } else if (field === 'appointment-date') {
-                    // Special handling for date fields
-                    if (element.disabled) {
-                        element.disabled = false;
-                        this.logActivity('Enabled appointment-date field for AI update');
-                    }
-                    element.value = value;
-                    this.logActivity(`Date field set to: "${element.value}", disabled: ${element.disabled}`);
-                } else {
-                    element.value = value;
-                }
-                
-                // Enable time field if it's being set
-                if (field === 'appointment-time' && element.disabled) {
-                    element.disabled = false;
-                    this.logActivity('Enabled appointment-time field for AI update');
-                }
-                
-                updatedFields.push(field);
-                this.logActivity(`Updated field "${field}" to "${element.value}"`);
-                
-                // Mark handlers needed but don't trigger yet
-                if (field === 'doctor') {
-                    needsDoctorHandler = true;
-                } else if (field === 'appointment-date') {
-                    needsDateHandler = true;
-                }
-                
-                // Visual feedback - flash green
-                const originalBg = element.style.backgroundColor || '';
-                element.style.backgroundColor = '#c6f6d5';
-                element.style.transition = 'background-color 0.3s ease';
-                
-                setTimeout(() => {
-                    element.style.backgroundColor = originalBg;
-                    setTimeout(() => {
-                        element.style.transition = '';
-                    }, 300);
-                }, 1000);
-            } else {
-                this.logActivity(`ERROR: Form field not found: "${field}" - Available elements: ${Array.from(document.querySelectorAll('[id]')).map(el => el.id).join(', ')}`);
+            if (!element) {
+                this.logActivity(`ERROR: Form field not found: "${field}"`);
+                return;
             }
+
+            // Set field value with appropriate handling
+            this.setFieldValue(element, field, value);
+            
+            // Enable disabled fields as needed
+            if (element.disabled && ['appointment-date', 'appointment-time'].includes(field)) {
+                element.disabled = false;
+            }
+            
+            // Add visual feedback
+            this.addFieldUpdateAnimation(element);
+            updatedFields.push(field);
         });
         
-        // Second pass: Trigger handlers only if needed, after all values are set
-        if (needsDoctorHandler && !formUpdates['appointment-location']) {
-            // Only trigger doctor handler if location wasn't explicitly set by AI
-            this.logActivity('Triggering doctor selection handler (no location override)');
+        return updatedFields;
+    }
+
+    setFieldValue(element, field, value) {
+        if (element.tagName === 'SELECT' && ['appointment-location', 'doctor'].includes(field)) {
+            const matchedOption = this.findMatchingOption(element, value);
+            element.value = matchedOption ? matchedOption.value : value;
+        } else {
+            element.value = value;
+        }
+    }
+
+    addFieldUpdateAnimation(element) {
+        const originalBg = element.style.backgroundColor || '';
+        element.style.backgroundColor = '#c6f6d5';
+        element.style.transition = 'background-color 0.3s ease';
+        
+        setTimeout(() => {
+            element.style.backgroundColor = originalBg;
+            setTimeout(() => element.style.transition = '', 300);
+        }, 1000);
+    }
+
+    handleFormDependencies(formUpdates, updatedFields) {
+        const needsDoctorHandler = formUpdates.doctor && !formUpdates['appointment-location'];
+        const needsDateHandler = formUpdates['appointment-date'];
+        
+        if (needsDoctorHandler) {
             this.handleDoctorSelection();
-        } else if (needsDoctorHandler) {
-            this.logActivity('Skipping doctor selection handler - location was explicitly set by AI');
-            // Still need to enable date field and set up restrictions
-            const doctorSelect = document.getElementById('doctor');
-            if (doctorSelect.value) {
-                this.setupDateRestrictions(doctorSelect.value);
-                document.getElementById('appointment-date').disabled = false;
-            }
+        } else if (formUpdates.doctor) {
+            // Set up date restrictions without triggering full handler
+            this.setupDateRestrictions(formUpdates.doctor);
+            document.getElementById('appointment-date').disabled = false;
         }
         
         if (needsDateHandler) {
-            this.logActivity('Triggering date selection handler');
-            // Store the AI-set time value before date handler overwrites it
-            const aiSetTime = formUpdates['appointment-time'];
-            this.handleDateSelection();
-            
-            // Restore AI-set time after time slots are generated
-            if (aiSetTime) {
-                const timeElement = document.getElementById('appointment-time');
-                if (timeElement) {
-                    timeElement.value = aiSetTime;
-                    this.logActivity(`Restored AI-set time: ${aiSetTime}`);
-                }
+            this.handleDateSelectionWithTimePreservation(formUpdates['appointment-time']);
+        }
+    }
+
+    handleDateSelectionWithTimePreservation(aiSetTime) {
+        this.handleDateSelection();
+        
+        // Restore AI-set time after time slots are generated
+        if (aiSetTime) {
+            const timeElement = document.getElementById('appointment-time');
+            if (timeElement) {
+                timeElement.value = aiSetTime;
             }
         }
-        
+    }
+
+    showFormUpdateResults(updatedFields) {
         if (updatedFields.length > 0) {
             this.showFormUpdateNotification(updatedFields);
             this.logActivity(`Updated form fields: ${updatedFields.join(', ')}`);
@@ -875,47 +856,24 @@ class CareCoordinatorApp {
     }
 
     findMatchingOption(selectElement, searchValue) {
-        // Try to find an option that contains the search value as a substring
         const options = Array.from(selectElement.options);
+        const searchLower = searchValue.toLowerCase();
         
-        // First try exact match
-        let match = options.find(option => option.value === searchValue || option.textContent === searchValue);
-        if (match) {
-            this.logActivity(`Exact match found: "${searchValue}"`);
-            return match;
+        // Try multiple matching strategies in order of preference
+        const matchers = [
+            // Exact matches
+            option => option.value === searchValue || option.textContent === searchValue,
+            option => option.value.toLowerCase() === searchLower || option.textContent.toLowerCase() === searchLower,
+            // Substring matches
+            option => option.value.toLowerCase().includes(searchLower) || option.textContent.toLowerCase().includes(searchLower),
+            option => searchLower.includes(option.value.toLowerCase()) || searchLower.includes(option.textContent.toLowerCase())
+        ];
+        
+        for (const matcher of matchers) {
+            const match = options.find(matcher);
+            if (match) return match;
         }
         
-        // Then try case-insensitive exact match
-        match = options.find(option => 
-            option.value.toLowerCase() === searchValue.toLowerCase() || 
-            option.textContent.toLowerCase() === searchValue.toLowerCase()
-        );
-        if (match) {
-            this.logActivity(`Case-insensitive exact match found: "${searchValue}"`);
-            return match;
-        }
-        
-        // Then try substring match (AI value contained in option)
-        match = options.find(option => 
-            option.value.toLowerCase().includes(searchValue.toLowerCase()) || 
-            option.textContent.toLowerCase().includes(searchValue.toLowerCase())
-        );
-        if (match) {
-            this.logActivity(`Substring match found: "${searchValue}" in "${match.textContent}"`);
-            return match;
-        }
-        
-        // Finally try reverse substring (option contained in AI value)
-        match = options.find(option => 
-            searchValue.toLowerCase().includes(option.value.toLowerCase()) ||
-            searchValue.toLowerCase().includes(option.textContent.toLowerCase())
-        );
-        if (match) {
-            this.logActivity(`Reverse substring match found: "${match.textContent}" in "${searchValue}"`);
-            return match;
-        }
-        
-        this.logActivity(`No match found for: "${searchValue}" in options: ${options.map(o => o.textContent).join(', ')}`);
         return null;
     }
 
