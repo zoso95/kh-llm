@@ -359,6 +359,29 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     background: #e2e8f0;
 }
 
+/* Form Update Notification */
+.form-update-notification {
+    background: #c6f6d5;
+    border: 1px solid #38a169;
+    color: #276749;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    font-size: 14px;
+    animation: slideInDown 0.3s ease-out;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 @media (max-width: 768px) {
     main {
         grid-template-columns: 1fr;

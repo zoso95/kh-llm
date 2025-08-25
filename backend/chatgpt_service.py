@@ -31,6 +31,52 @@ PATIENT_API_URL = os.getenv('PATIENT_API_URL', 'http://localhost:5000')
 patient_cache = {}
 CACHE_EXPIRY_MINUTES = 5  # Cache patient data for 5 minutes
 
+def parse_form_updates(ai_response):
+    """
+    Parse form updates from AI response
+    Returns: (form_updates_dict, clean_response)
+    """
+    try:
+        import re
+        
+        # First, try to find FORM_UPDATE: {json} pattern
+        form_update_pattern = r'FORM_UPDATE:\s*(\{[^}]*\})'
+        match = re.search(form_update_pattern, ai_response)
+        
+        if match:
+            json_str = match.group(1)
+            clean_response = re.sub(form_update_pattern, '', ai_response).strip()
+            form_updates = json.loads(json_str)
+            logger.info(f"Parsed FORM_UPDATE pattern: {form_updates}")
+            return form_updates, clean_response
+        
+        # If no FORM_UPDATE found, look for JSON code blocks
+        json_block_pattern = r'```json\s*(\{.*?\})\s*```'
+        match = re.search(json_block_pattern, ai_response, re.DOTALL)
+        
+        if match:
+            json_str = match.group(1).strip()
+            clean_response = re.sub(json_block_pattern, '', ai_response, flags=re.DOTALL).strip()
+            form_updates = json.loads(json_str)
+            logger.info(f"Parsed JSON code block: {form_updates}")
+            return form_updates, clean_response
+        
+        # Look for any JSON object in the response (fallback)
+        json_pattern = r'(\{[^{}]*"(?:doctor|appointment-[^"]*)"[^{}]*\})'
+        match = re.search(json_pattern, ai_response)
+        
+        if match:
+            json_str = match.group(1)
+            form_updates = json.loads(json_str)
+            logger.info(f"Parsed fallback JSON: {form_updates}")
+            return form_updates, ai_response
+        
+        return None, ai_response
+        
+    except Exception as e:
+        logger.warning(f"Error parsing form updates: {e}")
+        return None, ai_response
+
 def fetch_patient_data(patient_id):
     """
     Fetch patient data from the patient API with caching
@@ -145,13 +191,23 @@ def chat_with_assistant():
         
         logger.info(f"Generated AI response for patient {patient_id}")
         
-        return jsonify({
-            "response": ai_result['response'],
+        # Parse form updates from AI response
+        form_updates, clean_response = parse_form_updates(ai_result['response'])
+        
+        response_data = {
+            "response": clean_response,
             "timestamp": ai_result['timestamp'],
             "patient_id": patient_id,
             "model": ai_result.get('model'),
             "tokens_used": ai_result.get('tokens_used')
-        })
+        }
+        
+        # Add form updates if present
+        if form_updates:
+            response_data["form_updates"] = form_updates
+            logger.info(f"Form updates extracted: {form_updates}")
+        
+        return jsonify(response_data)
         
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}")

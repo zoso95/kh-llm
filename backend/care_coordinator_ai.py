@@ -102,7 +102,12 @@ Referred Providers:
         """
         Create the system prompt for the care coordinator assistant
         """
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        current_day = datetime.now().strftime("%A")
+        
         return f"""You are a Care Coordinator Assistant helping a nurse book appointments and coordinate patient care. Your role is to guide the nurse through the appointment booking process and answer questions about providers, insurance, and scheduling.
+
+Current Date: {current_date} ({current_day})
 
 {patient_data}
 
@@ -130,6 +135,18 @@ Key Responsibilities:
    - New patients arrive 30 minutes early, established patients 10 minutes early
 
 4. Be helpful, professional, and guide the conversation systematically to ensure all required information is collected for successful appointment booking.
+
+5. When you have enough information to help fill out appointment booking fields, include a JSON object at the END of your response with the format:
+   FORM_UPDATE: {{"field_name": "value", "field_name": "value"}}
+   
+   Available form fields:
+   - "doctor": Doctor name (e.g., "House, Gregory")
+   - "appointment-type": "NEW" or "ESTABLISHED" 
+   - "appointment-location": Location name (e.g., "PPTH Orthopedics")
+   - "appointment-date": Date in YYYY-MM-DD format
+   - "appointment-time": Time in HH:MM format (24-hour)
+   
+   Example: "I'll help you book with Dr. House for next Tuesday at 2pm. FORM_UPDATE: {{"doctor": "House, Gregory", "appointment-date": "2024-01-23", "appointment-time": "14:00"}}"
 
 Always reference the specific patient data and hospital information provided when making recommendations or answering questions."""
 
@@ -171,7 +188,6 @@ Always reference the specific patient data and hospital information provided whe
             hospital_data = self.format_data_sheet(data_sheet_path)
             system_prompt = self.create_system_prompt(patient_data, hospital_data)
             
-            """
             # Build conversation messages
             messages = [{"role": "system", "content": system_prompt}]
             
@@ -182,24 +198,17 @@ Always reference the specific patient data and hospital information provided whe
             # Add current question
             messages.append({"role": "user", "content": question})
             
-            logger.info(f"Sending question to OpenAI: {question}")
-            
-            # Make API call
-            response = openai.ChatCompletion.create(
+            logger.info(f"Sending question to OpenAI with {len(messages)} messages")
+
+            # Make API call using current chat completions API
+            response = self.client.chat.completions.create(
                 model=CHAT_MODEL,
                 messages=messages,
                 max_tokens=500,
                 temperature=0.7
             )
-            """
-
-            response = self.client.responses.create(
-                model=CHAT_MODEL,
-                instructions=system_prompt,
-                input=question,
-            )
             
-            assistant_response = response.output_text
+            assistant_response = response.choices[0].message.content
             
             logger.info(f"Received response from OpenAI: {assistant_response[:100]}...")
             
@@ -207,7 +216,7 @@ Always reference the specific patient data and hospital information provided whe
                 "response": assistant_response,
                 "timestamp": datetime.now().isoformat(),
                 "model": CHAT_MODEL,
-                "tokens_used": response.usage.total_tokens if hasattr(response, 'usage') else None
+                "tokens_used": response.usage.total_tokens if response.usage else None
             }
             
         except Exception as e:
